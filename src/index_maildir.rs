@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 // Map of Maildir flag characters to tag names.
-// 🐹 The hamster’s secret decoder ring.
+// 🐹 The hamster's secret decoder ring.
 pub const FLAG_TO_TAG: &[(char, &str)] = &[
     ('D', "draft"),
     ('F', "flagged"),
@@ -74,6 +74,7 @@ pub fn should_skip_entry(entry: &walkdir::DirEntry) -> bool {
 
 // Discover all Maildir folders (relative paths) under `root`.
 // This is the one true folder‑sniffing function; everyone should use it.
+// RFC 3501 requires all three directories: cur, new, and tmp.
 pub fn discover_maildir_folders(root: &Path) -> Result<Vec<PathBuf>> {
     let mut folders = Vec::new();
     for entry in WalkDir::new(root)
@@ -82,7 +83,12 @@ pub fn discover_maildir_folders(root: &Path) -> Result<Vec<PathBuf>> {
         .filter_map(|e| e.ok())
     {
         let path = entry.path();
-        if path.is_dir() && path.join("cur").is_dir() && path.join("new").is_dir() {
+        // RFC 3501 requires cur, new, AND tmp directories
+        if path.is_dir()
+            && path.join("cur").is_dir()
+            && path.join("new").is_dir()
+            && path.join("tmp").is_dir()
+        {
             let rel = path.strip_prefix(root).unwrap_or(path).to_path_buf();
             folders.push(rel);
         }

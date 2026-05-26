@@ -23,6 +23,7 @@ mod tests_correctness;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use setup::HamsterConfig;
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -83,18 +84,47 @@ enum FolderAction {
     },
 }
 
+// ── Config validation helper ───────────────────────────────────────────────
+//
+// Early validation prevents cryptic errors deep in indexing or searching.
+// The hamster believes in fail-fast with helpful messages.
+
+pub fn validate_config(config: &HamsterConfig) -> Result<()> {
+    let maildir_path = Path::new(&config.maildir);
+    
+    if !maildir_path.exists() {
+        anyhow::bail!(
+            "Maildir path does not exist: {}\n\n\
+             Please check your configuration at {:?} and ensure the path is correct.\n\
+             You can re-run 'hamster setup' to update it.",
+            config.maildir,
+            config.config_file
+        );
+    }
+    
+    if !maildir_path.is_dir() {
+        anyhow::bail!(
+            "Maildir path is not a directory: {}\n\n\
+             It appears to be a file. Please check your configuration.",
+            config.maildir
+        );
+    }
+    
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
     let cli = Cli::parse();
 
     // Load or create config using the default paths.
     // We always compute the index and config file locations from $HOME,
-    // even if the config file exists – those paths shouldn’t be saved.
+    // even if the config file exists – those paths shouldn't be saved.
     let default_config = HamsterConfig::default();
     let cfg_path = default_config.config_file.clone();
     let config: HamsterConfig = if cfg_path.exists() {
         let contents = std::fs::read_to_string(&cfg_path)
-            .with_context(|| format!("Failed to read config from {:?}", cfg_path))?;
+            .with_context(|| format!("Failed to read config from {:?}", cfg_path))?
         let mut loaded: HamsterConfig = toml::from_str(&contents)?;
         // Restore the runtime‑computed paths that serde skipped.
         loaded.config_file = default_config.config_file;
@@ -114,15 +144,33 @@ fn main() -> Result<()> {
                 setup::run(None)
             }
         }
-        Commands::Index { maildir } => index::run(&config, maildir),
-        Commands::Search { format, query } => search::run(&config, query.join(" "), &format),
-        Commands::Stats => stats::run(&config),
-        Commands::Tag { tag_changes, query } => tag::run(&config, tag_changes, query.join(" ")),
+        Commands::Index { maildir } => {
+            validate_config(&config)?;
+            index::run(&config, maildir)
+        }
+        Commands::Search { format, query } => {
+            validate_config(&config)?;
+            search::run(&config, query.join(" "), &format)
+        }
+        Commands::Stats => {
+            validate_config(&config)?;
+            stats::run(&config)
+        }
+        Commands::Tag { tag_changes, query } => {
+            validate_config(&config)?;
+            tag::run(&config, tag_changes, query.join(" "))
+        }
         Commands::Address {
             format,
             search_terms,
-        } => address::run(&config, &format, search_terms.join(" ")),
-        Commands::Tui => tui::run(&config),
+        } => {
+            validate_config(&config)?;
+            address::run(&config, &format, search_terms.join(" "))
+        }
+        Commands::Tui => {
+            validate_config(&config)?;
+            tui::run(&config)
+        }
         Commands::Edit => {
             let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nano".to_string());
             std::process::Command::new(editor)
@@ -131,12 +179,19 @@ fn main() -> Result<()> {
                 .context("Failed to launch editor")?;
             Ok(())
         }
-        Commands::Folder(action) => match action {
-            FolderAction::Sync { dry_run, quiet } => folder_tags::sync(&config, dry_run, quiet),
-            FolderAction::Structure { dry_run, quiet } => {
-                folder_tags::sync_structure(&config, dry_run, quiet)
+        Commands::Folder(action) => {
+            validate_config(&config)?;
+            match action {
+                FolderAction::Sync { dry_run, quiet } => {
+                    folder_tags::sync(&config, dry_run, quiet)
+                }
+                FolderAction::Structure { dry_run, quiet } => {
+                    folder_tags::sync_structure(&config, dry_run, quiet)
+                }
+                FolderAction::Explain { identifier } => {
+                    folder_tags::explain(&config, &identifier)
+                }
             }
-            FolderAction::Explain { identifier } => folder_tags::explain(&config, &identifier),
-        },
+        }
     }
 }
