@@ -124,7 +124,7 @@ fn main() -> Result<()> {
     let cfg_path = default_config.config_file.clone();
     let config: HamsterConfig = if cfg_path.exists() {
         let contents = std::fs::read_to_string(&cfg_path)
-            .with_context(|| format!("Failed to read config from {:?}", cfg_path))?
+            .with_context(|| format!("Failed to read config from {:?}", cfg_path))?;
         let mut loaded: HamsterConfig = toml::from_str(&contents)?;
         // Restore the runtime‑computed paths that serde skipped.
         loaded.config_file = default_config.config_file;
